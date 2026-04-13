@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================================
+   🌍 BASE RESET (CLEAN)
+================================ */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ================================
+   📐 ROOT LAYOUT
+================================ */
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  background-color: #0B0F1A;
+  color: white;
+}
+
+/* ================================
+   🎯 SCROLLBAR (MINIMAL)
+================================ */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2f3a;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4150;
+}
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+/* smoother feel */
+* {
+  scroll-behavior: smooth;
+}
