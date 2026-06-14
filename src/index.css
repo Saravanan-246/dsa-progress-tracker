@@ -2,9 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ================================
-   🌍 BASE RESET (CLEAN)
-================================ */
+/* ==========================================================================
+   🌍 RESET & CORE LAYOUT ARCHITECTURE
+   ========================================================================== */
+
+/* Clean global reset & standard box-sizing behaviors */
 *,
 *::before,
 *::after {
@@ -13,52 +15,60 @@
   box-sizing: border-box;
 }
 
-/* ================================
-   📐 ROOT LAYOUT
-================================ */
+/* Guarantee unified app viewports for production dashboard components */
 html,
 body,
 #root {
-  height: 100%;
   width: 100%;
+  height: 100%;
 }
 
+/* Base typography rendering with hardware-accelerated text engine optimizations */
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #09090b;
+  color: #fafafa;
   overflow-x: hidden;
+  overscroll-behavior-y: none;
   -webkit-font-smoothing: antialiased;
-  background-color: #0B0F1A;
-  color: white;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  
+  /* Unified Cross-Browser Thin Scrollbar Matrix (Firefox support) */
+  scrollbar-width: thin;
+  scrollbar-color: #27272a transparent;
 }
 
-/* ================================
-   🎯 SCROLLBAR (MINIMAL)
-================================ */
+/* Smooth HTML scroll settings isolated to non-interactive motion triggers */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ==========================================================================
+   🎯 PLATFORM-SAFE CHROME/SAFARI CUSTOM SCROLLBARS
+   ========================================================================== */
+
+/* Track width dimensions matching UI scale matrix ratios */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
+/* Transparent track overlay layers */
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* High-contrast zinc styling for scroll handles */
 ::-webkit-scrollbar-thumb {
-  background: #2a2f3a;
-  border-radius: 999px;
+  background: #27272a;
+  border-radius: 9999px;
+  border: 1px solid transparent;
 }
 
+/* Dynamic interaction feedback on system scrolling rows */
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a4150;
-}
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  overscroll-behavior: none;
-}
-
-/* smoother feel */
-* {
-  scroll-behavior: smooth;
+  background: #3f3f46;
 }

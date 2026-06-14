@@ -1,9 +1,5 @@
 import phase1 from "./phase1";
-import phase2 from "./phase2";
-import phase3 from "./phase3";
 
-export const plan = [
-  ...phase1,
-  ...phase2,
-  ...phase3
-];
+export const plan = phase1;
+
+export default plan;

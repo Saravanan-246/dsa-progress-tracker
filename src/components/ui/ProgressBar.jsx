@@ -1,8 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Target, Flame, Trophy } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { motion } from "framer-motion";
+import { CheckCircle2, Target, Flame, Trophy, AlertTriangle } from "lucide-react";
+import Navbar from "../components/layout/Navbar";
+import Sidebar from "../components/layout/Sidebar";
 import { plan } from "../data/plan";
 
+// --- SAFE STORAGE UTILITY ---
+const getSafeStorage = (key) => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : [];
+  } catch (error) {
+    return [];
+  }
+};
+
 export default function Progress() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [dataError, setDataError] = useState(false);
+  
   const [progress, setProgress] = useState({
     totalTasks: 0,
     completedTasks: 0,
@@ -10,208 +26,255 @@ export default function Progress() {
     streak: 0,
   });
 
-  const computeProgress = () => {
-    let completed = 0;
-    let total = 0;
-    const dayStats = {};
+  // -----------------------------
+  // FAIL-SAFE DATA ENGINE
+  // -----------------------------
+  const computeProgress = useCallback(() => {
+    try {
+      let completed = 0;
+      let total = 0;
+      const dayStats = {};
 
-    plan.forEach((day) => {
-      const saved = JSON.parse(localStorage.getItem(`day-${day.day}`)) || [];
-      total += day.tasks.length;
-      completed += saved.length;
-      dayStats[day.day] = saved.length;
-    });
+      if (!Array.isArray(plan)) {
+        setDataError(true);
+        return;
+      }
 
-    let streak = 0;
-    for (let i = plan.length; i >= 1; i--) {
-      if (dayStats[i] > 0) streak++;
-      else break;
+      plan.forEach((day) => {
+        if (!day) return;
+        const saved = getSafeStorage(`day-${day.day || 'unknown'}`);
+        
+        let dayTotalTasks = 0;
+        if (day.sections) {
+          dayTotalTasks = Object.values(day.sections).reduce(
+            (acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0
+          );
+        } else if (Array.isArray(day.tasks)) {
+          dayTotalTasks = day.tasks.length;
+        } else if (day.stats?.totalTasks) {
+          dayTotalTasks = day.stats.totalTasks;
+        }
+
+        total += dayTotalTasks;
+        completed += saved.length;
+        dayStats[day.day] = saved.length;
+      });
+
+      // Calculate Streak Safely
+      let streak = 0;
+      for (let i = plan.length; i >= 1; i--) {
+        if (dayStats[i] > 0) streak++;
+        else if (streak > 0) break;
+      }
+
+      setProgress({ totalTasks: total, completedTasks: completed, dayStats, streak });
+      setDataError(false);
+    } catch (err) {
+      setDataError(true);
     }
-
-    setProgress({
-      totalTasks: total,
-      completedTasks: completed,
-      dayStats,
-      streak,
-    });
-  };
+  }, []);
 
   useEffect(() => {
     computeProgress();
     window.addEventListener("local-update", computeProgress);
+    window.addEventListener("storage", computeProgress);
     return () => {
       window.removeEventListener("local-update", computeProgress);
+      window.removeEventListener("storage", computeProgress);
     };
-  }, []);
+  }, [computeProgress]);
 
   const percentage = useMemo(() => {
     if (progress.totalTasks === 0) return 0;
-    return Math.min(
-      Math.round((progress.completedTasks / progress.totalTasks) * 100),
-      100
-    );
+    return Math.min(Math.round((progress.completedTasks / progress.totalTasks) * 100), 100);
   }, [progress]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 p-4 text-white md:p-8">
-      <Header />
+    <div className="min-h-screen bg-[#09090b] text-zinc-400 font-sans antialiased selection:bg-zinc-800">
+      {/* Structural Minimalist Grid Overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f1f23_1px,transparent_1px),linear-gradient(to_bottom,#1f1f23_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-[0.2] pointer-events-none" />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <MiniStat
-          icon={<Flame size={18} />}
-          label="Current Streak"
-          value={`${progress.streak} Days`}
-        />
-        <MiniStat
-          icon={<CheckCircle2 size={18} />}
-          label="Tasks Completed"
-          value={progress.completedTasks}
-        />
-        <MiniStat
-          icon={<Target size={18} />}
-          label="Mastery"
-          value={`${percentage}%`}
-        />
-      </div>
+      <Navbar setOpen={setIsSidebarOpen} />
+      <Sidebar open={isSidebarOpen} setOpen={setIsSidebarOpen} />
 
-      <ProgressBar
-        percent={percentage}
-        completed={progress.completedTasks}
-        total={progress.totalTasks}
-      />
+      <main className="pt-24 md:pl-64 px-6 lg:px-12 pb-24 relative z-10 max-w-[1400px] mx-auto">
+        <div className="space-y-10">
+          
+          {/* ERROR BANNER */}
+          {dataError && (
+            <div className="bg-red-500/5 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3 text-sm">
+              <AlertTriangle size={16} className="text-red-400 shrink-0" />
+              <p className="text-xs font-medium">Warning: Missing or corrupted curriculum pipeline data structures. Telemetry statistics may read inaccurate maps.</p>
+            </div>
+          )}
 
-      <ActivityMap dayStats={progress.dayStats} />
+          <Header />
+
+          {/* STATS SUMMARY PANELS */}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <MiniStat
+              icon={<Flame size={14} />}
+              label="Current Progress Streak"
+              value={`${progress.streak} Days`}
+              color="text-orange-400"
+              bg="bg-orange-500/5 border-orange-500/10"
+            />
+            <MiniStat
+              icon={<CheckCircle2 size={14} />}
+              label="Tasks Completed"
+              value={`${progress.completedTasks} units`}
+              color="text-emerald-400"
+              bg="bg-emerald-500/5 border-emerald-500/10"
+            />
+            <MiniStat
+              icon={<Target size={14} />}
+              label="Core Mastery Rate"
+              value={`${percentage}%`}
+              color="text-indigo-400"
+              bg="bg-indigo-500/5 border-indigo-500/10"
+            />
+          </div>
+
+          {/* CINEMATIC TRACK BAR */}
+          <ProgressBar percent={percentage} completed={progress.completedTasks} total={progress.totalTasks} />
+
+          {/* SYSTEM HEATMAP CONNECTOR */}
+          <ActivityMap dayStats={progress.dayStats} />
+        </div>
+      </main>
+
+      <style>{`
+        @keyframes tip-pulse {
+          0%, 100% { transform: scale(1); opacity: 0.8; }
+          50% { transform: scale(1.3); opacity: 0.3; }
+        }
+        .animate-tip-pulse { animation: tip-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+      `}</style>
     </div>
   );
 }
 
+// -----------------------------
+// SYSTEM HEADER BANNER
+// -----------------------------
 function Header() {
   return (
-    <div className="flex items-end justify-between">
+    <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-zinc-800/60">
       <div>
-        <h1 className="text-2xl font-semibold md:text-3xl">
-          Progress Overview
+        <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-1">
+          <span>Metrics Analytics Console</span>
+          <span className="text-zinc-700">/</span>
+          <span className="text-zinc-400 font-mono">Overview</span>
+        </div>
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100 flex items-center gap-2">
+          Progress Architecture
         </h1>
-        <p className="text-sm text-white/50">Track your 90-day consistency</p>
       </div>
-    </div>
+    </header>
   );
 }
 
+// -----------------------------
+// PROGRESS BAR
+// -----------------------------
 function ProgressBar({ percent, completed, total }) {
-  const safePercent = Math.max(0, Math.min(100, percent));
-  const showTip = safePercent > 2;
+  const safePercent = Math.max(0, Math.min(100, isNaN(percent) ? 0 : percent));
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-[0_8px_30px_rgba(0,0,0,0.18)] backdrop-blur-sm">
-      <div className="mb-4 flex items-center justify-between">
+    <section className="relative overflow-hidden rounded-xl border border-zinc-800 bg-[#0d0d11]/60 p-6 shadow-sm">
+      <div className="relative z-10 mb-4 flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">
-            Overall Progress
+          <p className="text-[10px] uppercase tracking-[0.15em] font-bold text-zinc-500">
+            Weighted Curriculum Completion
           </p>
-          <p className="mt-1 text-sm font-medium text-white/85">
-            {completed} / {total} tasks completed
+          <p className="mt-1 text-xs text-zinc-400 font-medium">
+            <span className="text-zinc-200 font-bold font-mono text-sm">{completed}</span> of {total} verified target nodes mapped
           </p>
         </div>
 
-        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-semibold text-white shadow-inner shadow-white/5">
+        <div className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs font-mono font-bold text-zinc-200 shadow-inner">
           {safePercent}%
         </div>
       </div>
 
       <div className="relative">
-        <div className="relative h-3.5 w-full overflow-hidden rounded-full bg-white/10 ring-1 ring-inset ring-white/5">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.08),transparent_70%)]" />
-
-          <div
-            className="relative h-full rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-400 shadow-[0_0_18px_rgba(99,102,241,0.30)] transition-[width] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
-            style={{ width: `${safePercent}%` }}
+        <div className="relative h-3 w-full overflow-hidden rounded-full bg-zinc-950 border border-zinc-900">
+          <motion.div
+            className="relative h-full rounded-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
+            initial={{ width: 0 }}
+            animate={{ width: `${safePercent}%` }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
           >
-            <div className="absolute inset-0 rounded-full bg-[linear-gradient(to_bottom,rgba(255,255,255,0.24),rgba(255,255,255,0.03))]" />
-
-            <div className="absolute inset-0 overflow-hidden rounded-full">
-              <div className="absolute inset-y-0 left-[-35%] w-[32%] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.48),transparent)] skew-x-[-18deg] animate-progress-shine" />
-            </div>
-
-            <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
-              <span className="snow-dot absolute left-[14%] top-1/2 -translate-y-1/2 animate-snow-float [animation-delay:0s]" />
-              <span className="snow-dot absolute left-[36%] top-[32%] animate-snow-float [animation-delay:.8s]" />
-              <span className="snow-dot absolute left-[57%] top-[60%] animate-snow-float [animation-delay:1.6s]" />
-              <span className="snow-dot absolute left-[76%] top-[35%] animate-snow-float [animation-delay:2.4s]" />
-            </div>
-
-            {showTip && (
-              <div className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 translate-x-[20%]">
-                <div className="absolute inset-[3px] rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.95)]" />
-                <div className="absolute inset-0 rounded-full bg-white/25 blur-md animate-tip-pulse" />
+            {safePercent > 2 && (
+              <div className="absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 translate-x-[20%]">
+                <div className="absolute inset-[3px] rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,1)]" />
+                <div className="absolute inset-0 rounded-full bg-white/40 blur-sm animate-tip-pulse" />
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-center justify-between text-[11px] text-white/45">
-          <span>Keep going</span>
-          <span>Smooth live progress</span>
+          </motion.div>
         </div>
       </div>
     </section>
   );
 }
 
+// -----------------------------
+// MATRIX HEATMAP GITHUB-STYLE
+// -----------------------------
 function ActivityMap({ dayStats }) {
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between">
+    <section className="rounded-xl border border-zinc-800/60 bg-[#0d0d11]/60 p-6 space-y-5">
+      <div className="flex items-center justify-between border-b border-zinc-800/60 pb-4">
         <div className="flex items-center gap-2">
-          <Trophy size={14} className="text-yellow-400" />
-          <h3 className="text-xs uppercase tracking-wide text-white/40">
-            Activity Map
+          <div className="p-2 bg-zinc-900 border border-zinc-800 text-zinc-400 rounded-lg">
+            <Trophy size={14} className="text-yellow-500/80" />
+          </div>
+          <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+            Consistency Matrix Logs
           </h3>
         </div>
-
-        <span className="text-[10px] text-white/30">Last 90 days</span>
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500 bg-zinc-900/60 border border-zinc-800 px-2 py-1 rounded-md">90-Day Telemetry Matrix</span>
       </div>
 
-      <div className="grid grid-cols-7 gap-2 sm:grid-cols-10 md:grid-cols-15 lg:grid-cols-[repeat(18,minmax(0,1fr))]">
+      <div className="grid grid-cols-6 sm:grid-cols-10 md:grid-cols-14 lg:grid-cols-[repeat(18,minmax(0,1fr))] gap-2">
         {Array.from({ length: 90 }).map((_, i) => {
           const day = i + 1;
           const count = dayStats[day] || 0;
 
-          const color =
-            count === 0
-              ? "bg-white/[0.06]"
-              : count === 1
-              ? "bg-emerald-900"
-              : count === 2
-              ? "bg-emerald-600"
-              : "bg-emerald-400";
+          const colorClass =
+            count === 0 ? "bg-zinc-900/40 border-zinc-800/30 hover:bg-zinc-800/40"
+          : count === 1 ? "bg-indigo-950/40 border-indigo-900/30"
+          : count === 2 ? "bg-indigo-700/50 border-indigo-600/50"
+          : "bg-indigo-500 border-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.15)]";
 
           return (
-            <div
+            <motion.div
               key={day}
-              title={`Day ${day} • ${count} tasks`}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.002, duration: 0.15 }}
+              title={`Day ${day} Framework Node: ${count} verified items`}
               className={`
-                group relative aspect-square rounded-md transition-all duration-200
-                ${color}
-                hover:scale-110
-                hover:shadow-[0_0_8px_rgba(52,211,153,0.25)]
+                group relative aspect-square rounded-[4px] border transition-all duration-150
+                ${colorClass} hover:scale-110 hover:z-10 cursor-crosshair flex items-center justify-center
               `}
             >
-              <span className="absolute inset-0 flex items-center justify-center text-[8px] text-white/70 opacity-0 transition group-hover:opacity-100">
+              <span className="text-[8px] font-mono font-bold text-zinc-200 opacity-0 transition-opacity duration-150 group-hover:opacity-100 pointer-events-none">
                 {day}
               </span>
-            </div>
+            </motion.div>
           );
         })}
       </div>
 
-      <div className="flex items-center gap-2 text-[10px] text-white/30">
+      {/* Legend layout box */}
+      <div className="flex justify-end items-center gap-2 pt-2 text-[10px] font-medium uppercase tracking-wider text-zinc-500 select-none">
         <span>Less</span>
-        <div className="flex gap-1">
-          <div className="h-3 w-3 rounded bg-white/[0.06]" />
-          <div className="h-3 w-3 rounded bg-emerald-900" />
-          <div className="h-3 w-3 rounded bg-emerald-600" />
-          <div className="h-3 w-3 rounded bg-emerald-400" />
+        <div className="flex gap-1.5 px-0.5">
+          <div className="h-2.5 w-2.5 rounded-sm bg-zinc-900 border border-zinc-800/60" />
+          <div className="h-2.5 w-2.5 rounded-sm bg-indigo-950/40 border border-indigo-900/40" />
+          <div className="h-2.5 w-2.5 rounded-sm bg-indigo-700/50 border border-indigo-600/50" />
+          <div className="h-2.5 w-2.5 rounded-sm bg-indigo-500 border border-indigo-400" />
         </div>
         <span>More</span>
       </div>
@@ -219,32 +282,21 @@ function ActivityMap({ dayStats }) {
   );
 }
 
-function MiniStat({ icon, label, value, color = "text-emerald-400" }) {
+// -----------------------------
+// STRUCTURAL METRIC COMPONENTS
+// -----------------------------
+function MiniStat({ icon, label, value, color, bg }) {
   return (
-    <div
-      className="
-        group flex items-center gap-4 rounded-xl border border-white/10
-        bg-white/[0.03] p-4 transition-all duration-200
-        hover:border-white/20 hover:bg-white/[0.05]
-      "
-    >
-      <div
-        className={`
-          flex h-10 w-10 items-center justify-center rounded-lg
-          border border-white/10 bg-white/[0.05]
-          ${color}
-          transition group-hover:scale-105
-        `}
-      >
+    <div className="group flex items-center gap-4 rounded-xl border border-zinc-800 bg-[#0d0d11]/40 p-4 transition-all duration-200 hover:bg-[#0d0d11]/80 hover:border-zinc-700/60">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${bg} ${color} transition-transform duration-200 group-hover:scale-105`}>
         {icon}
       </div>
 
-      <div className="flex flex-col">
-        <span className="text-[11px] uppercase tracking-wide text-white/40">
+      <div className="flex flex-col min-w-0">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 truncate">
           {label}
         </span>
-
-        <span className="text-lg font-semibold text-white">{value}</span>
+        <span className="text-base font-bold font-mono text-zinc-200 mt-0.5 tracking-tight">{value}</span>
       </div>
     </div>
   );
