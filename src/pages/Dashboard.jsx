@@ -3,14 +3,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "../components/layout/Navbar";
 import Sidebar from "../components/layout/Sidebar";
 import { plan } from "../data/plan";
-import { Activity, CheckCircle2, Clock, Sparkles } from "lucide-react";
+import { Activity, CheckCircle2, Clock, ChevronDown, Sparkles, AlertTriangle } from "lucide-react";
 
 // --- SAFE STORAGE UTILITY ---
+// If someone corrupts the local storage string, this stops the React app from crashing.
 const getSafeStorage = (key) => {
   try {
     const item = localStorage.getItem(key);
     return item ? JSON.parse(item) : [];
   } catch (error) {
+    console.warn(`[SafeStorage] Corrupted data found for ${key}. Resetting to empty.`, error);
     return [];
   }
 };
@@ -18,10 +20,15 @@ const getSafeStorage = (key) => {
 export default function Dashboard() {
   const [open, setOpen] = useState(false);
   const [stats, setStats] = useState({ total: 0, completed: 0, daysDone: 0 });
+  const [openPhase, setOpenPhase] = useState({ p1: true });
   const [dataError, setDataError] = useState(false);
 
+  // Fallback if someone deletes the plan array completely
   const phases = useMemo(() => ({ p1: Array.isArray(plan) ? plan : [] }), []);
 
+  // -----------------------------
+  // FAIL-SAFE CALCULATION LOGIC
+  // -----------------------------
   const calculate = useCallback(() => {
     try {
       let totalTasksAccumulator = 0;
@@ -34,22 +41,32 @@ export default function Dashboard() {
       }
 
       plan.forEach((day) => {
-        if (!day || typeof day !== 'object') return;
+        if (!day || typeof day !== 'object') return; // Skip broken objects
+
         const savedTaskIndexes = getSafeStorage(`day-${day.day || 'unknown'}`);
+        
+        // Safely extract total tasks even if 'sections' is missing or undefined
         const explicitTotalTasks = Object.values(day.sections || {}).reduce(
-          (acc, curr) => acc + (Array.isArray(curr) ? curr.length : 0), 0
+          (acc, currentSectionArray) => acc + (Array.isArray(currentSectionArray) ? currentSectionArray.length : 0), 
+          0
         );
 
         totalTasksAccumulator += explicitTotalTasks;
         completedTasksAccumulator += savedTaskIndexes.length;
+
         if (savedTaskIndexes.length >= explicitTotalTasks && explicitTotalTasks > 0) {
           completedDaysCounter++;
         }
       });
 
-      setStats({ total: totalTasksAccumulator, completed: completedTasksAccumulator, daysDone: completedDaysCounter });
+      setStats({ 
+        total: totalTasksAccumulator, 
+        completed: completedTasksAccumulator, 
+        daysDone: completedDaysCounter 
+      });
       setDataError(false);
     } catch (err) {
+      console.error("[Dashboard Engine] Calculation failed:", err);
       setDataError(true);
     }
   }, []);
@@ -58,6 +75,7 @@ export default function Dashboard() {
     calculate();
     window.addEventListener("local-update", calculate);
     window.addEventListener("storage", calculate);
+
     return () => {
       window.removeEventListener("local-update", calculate);
       window.removeEventListener("storage", calculate);
@@ -68,175 +86,206 @@ export default function Dashboard() {
     return stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
   }, [stats.completed, stats.total]);
 
-  return (
-    <div className="bg-[#030407] text-slate-300 min-h-screen selection:bg-indigo-500/30 font-sans overflow-x-hidden">
-      {/* Visual Background Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-indigo-500/10 blur-[120px] rounded-full" />
-        <div className="absolute top-[20%] -right-[5%] w-[30%] h-[30%] bg-blue-600/5 blur-[100px] rounded-full" />
-      </div>
+  const togglePhase = (key) => {
+    setOpenPhase((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
+  return (
+    <div className="bg-[#07090E] text-slate-200 min-h-screen antialiased selection:bg-indigo-500/20">
       <Navbar setOpen={setOpen} />
       <Sidebar open={open} setOpen={setOpen} />
 
-      <main className="pt-28 md:pl-64 px-6 md:px-10 pb-20 relative z-10">
-        <div className="max-w-7xl mx-auto space-y-12">
-          
-          {/* HEADER SECTION */}
-          <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase tracking-widest">
-                <Sparkles size={12} />
-                Learning Management System
-              </div>
-              <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight">
-                Skill <span className="text-indigo-500">Pipeline.</span>
+      <main className="pt-24 md:pl-60 px-4 md:px-8 pb-16 transition-all duration-300">
+        <div className="max-w-6xl mx-auto space-y-10">
+
+          {/* ERROR BANNER (Only shows if someone breaks plan.js) */}
+          {dataError && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3 text-sm">
+              <AlertTriangle size={18} />
+              <p><strong>Warning:</strong> The data schema in <code>plan.js</code> appears to be corrupted. Please ensure it exports a valid array of days.</p>
+            </div>
+          )}
+
+          {/* HEADER */}
+          <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-white/[0.04]">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-2">
+                Dashboard
               </h1>
-              <p className="text-slate-400 max-w-md text-sm leading-relaxed">
-                Your structured path to placement readiness. Tracking 30 days of intensive technical prep.
+              <p className="text-xs text-slate-400 mt-1">
+                Track and manage your comprehensive 30-day placement preparation pipeline
               </p>
             </div>
-
-            <div className="hidden lg:flex flex-col items-end">
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">System Health</span>
-                <div className="flex items-center gap-2 text-xs font-medium text-emerald-400 bg-emerald-400/5 border border-emerald-400/10 px-3 py-1.5 rounded-lg">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Data Engine Operational
-                </div>
+            <div className="flex items-center gap-1.5 bg-indigo-500/[0.04] border border-indigo-500/20 px-3 py-1.5 rounded-full text-[11px] font-bold tracking-wide uppercase text-indigo-400">
+              <Sparkles size={12} className="animate-pulse" />
+              <span>Live Synced Workspace</span>
             </div>
           </header>
 
-          {/* STATS GRID */}
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <StatCard icon={<Activity />} label="Completed Tasks" value={stats.completed} max={stats.total} trend="Total Progress" />
-            <StatCard icon={<CheckCircle2 />} label="Days Mastered" value={stats.daysDone} max={phases.p1.length} trend="Daily Streaks" />
-            <StatCard icon={<Clock />} label="Days Remaining" value={Math.max(0, phases.p1.length - stats.daysDone)} trend="Estimated Finish" />
+          {/* METRIC CARDS */}
+          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatCard icon={<Activity size={16} />} label="Tasks Solved" value={stats.completed} max={stats.total} color="text-indigo-400" bg="bg-indigo-500/[0.02]" border="border-indigo-500/10" />
+            <StatCard icon={<CheckCircle2 size={16} />} label="Milestone Days Done" value={stats.daysDone} max={phases.p1.length} color="text-emerald-400" bg="bg-emerald-500/[0.02]" border="border-emerald-500/10" />
+            <StatCard icon={<Clock size={16} />} label="Remaining Days" value={Math.max(0, phases.p1.length - stats.daysDone)} color="text-amber-400" bg="bg-amber-500/[0.02]" border="border-amber-500/10" />
           </section>
 
-          {/* MAIN PROGRESS CARD */}
-          <section className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-blue-600 rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-1000" />
-            <div className="relative bg-[#0B0F17] border border-white/[0.08] rounded-2xl p-8 backdrop-blur-xl">
-                <div className="flex flex-col md:flex-row justify-between items-center gap-6 mb-8">
-                    <div className="space-y-1 text-center md:text-left">
-                        <h3 className="text-white font-bold text-lg">Overall Completion</h3>
-                        <p className="text-slate-500 text-xs">Weighted progress across all technical modules</p>
-                    </div>
-                    <div className="text-5xl font-black text-white font-mono tracking-tighter">
-                        {overallPercentage}<span className="text-indigo-500 text-2xl">%</span>
-                    </div>
-                </div>
+          {/* LINEAR PROGRESS */}
+          <section className="bg-gradient-to-b from-white/[0.01] to-transparent border border-white/[0.05] rounded-xl p-5 backdrop-blur-md">
+            <div className="flex justify-between items-baseline mb-2.5">
+              <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Aggregated Pipeline Progress</span>
+              <span className="text-xl font-bold font-mono text-white">{overallPercentage}%</span>
+            </div>
 
-                <div className="relative h-4 bg-white/[0.03] rounded-full overflow-hidden border border-white/[0.05]">
-                    <motion.div
-                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-indigo-600 via-blue-500 to-cyan-400 shadow-[0_0_20px_rgba(79,70,229,0.4)]"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${overallPercentage}%` }}
-                        transition={{ duration: 1.2, ease: "circOut" }}
-                    />
-                </div>
-                
-                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 border-t border-white/[0.05]">
-                    <MiniMetric label="Efficiency" value="94%" />
-                    <MiniMetric label="Accuracy" value="88%" />
-                    <MiniMetric label="Velocity" value="2.4/day" />
-                    <MiniMetric label="Status" value="Ahead" highlight />
-                </div>
+            <div className="h-2.5 bg-white/[0.06] rounded-full overflow-hidden relative border border-white/[0.02]">
+              <motion.div
+                className="h-full bg-gradient-to-r from-indigo-500 via-blue-500 to-sky-400 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${overallPercentage}%` }}
+                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+              />
+              <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.15)_50%,transparent_75%)] bg-[length:250%_100%] animate-shimmer pointer-events-none" />
             </div>
           </section>
 
-          {/* TIMELINE SECTION */}
-          <section className="space-y-6">
-            <div className="flex items-center gap-4">
-                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500 whitespace-nowrap">Timeline Curriculum</h2>
-                <div className="h-px w-full bg-white/[0.05]" />
-            </div>
+          {/* TIMELINE ACCORDIONS */}
+          <section className="space-y-4">
+            {[
+              { key: "p1", title: "Placement Preparation Timeline", sub: "Day 1 to Day 30 Comprehensive Guide" },
+            ].map((phase) => {
+              const isCollapsed = !openPhase[phase.key];
 
-            {phases.p1.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                    {phases.p1.map((day, idx) => (
-                        <DayCard key={day?.day || idx} day={day} />
-                    ))}
+              return (
+                <div key={phase.key} className="space-y-4">
+                  <div
+                    onClick={() => togglePhase(phase.key)}
+                    className="group cursor-pointer flex justify-between items-center bg-white/[0.01] hover:bg-white/[0.03] border border-white/[0.05] hover:border-white/[0.08] rounded-xl px-5 py-3.5 transition-all duration-200 select-none"
+                  >
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors">
+                        {phase.title}
+                      </h2>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{phase.sub}</p>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs font-medium text-slate-400 bg-white/[0.02] border border-white/[0.04] px-3 py-1.5 rounded-lg transition-colors group-hover:bg-white/[0.04]">
+                      <span>{isCollapsed ? "Expand View" : "Collapse View"}</span>
+                      <ChevronDown
+                        size={14}
+                        className={`text-slate-400 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${!isCollapsed ? "rotate-180 text-white" : ""}`}
+                      />
+                    </div>
+                  </div>
+
+                  <AnimatePresence initial={false}>
+                    {!isCollapsed && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                        className="overflow-hidden"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 pt-1 pb-2">
+                          {phases[phase.key].map((day, idx) => (
+                            <DayCard key={day?.day || idx} day={day} />
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-            )}
+              );
+            })}
           </section>
+
         </div>
       </main>
+
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .animate-shimmer {
+          animation: shimmer 6s infinite linear;
+        }
+      `}</style>
     </div>
   );
 }
 
-function StatCard({ icon, label, value, max, trend }) {
-  return (
-    <div className="group bg-[#0B0F17] border border-white/[0.06] hover:border-indigo-500/30 p-6 rounded-2xl transition-all duration-300 shadow-sm">
-      <div className="flex justify-between items-start mb-4">
-        <div className="p-2.5 bg-indigo-500/5 rounded-xl border border-indigo-500/10 text-indigo-400 group-hover:scale-110 transition-transform">
-          {icon}
-        </div>
-        <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{trend}</div>
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-slate-500 mb-1">{label}</p>
-        <h4 className="text-3xl font-bold text-white font-mono">
-          {value}
-          <span className="text-sm text-slate-600 font-sans ml-1.5 font-medium">/ {max}</span>
-        </h4>
-      </div>
-    </div>
-  );
-}
-
+// -----------------------------
+// SECURE DAY CARD LAYER
+// -----------------------------
 function DayCard({ day }) {
-  if (!day) return null;
+  if (!day) return null; // Defensive check
+
   const savedTaskIndexes = getSafeStorage(`day-${day.day || 'unknown'}`);
   const completedCount = savedTaskIndexes.length;
   
-  const totalTasks = useMemo(() => {
-    return Object.values(day.sections || {}).reduce((acc, curr) => acc + (Array.isArray(curr) ? curr.length : 0), 0);
+  const explicitTotalTasks = useMemo(() => {
+    return Object.values(day.sections || {}).reduce(
+      (acc, currentSectionArray) => acc + (Array.isArray(currentSectionArray) ? currentSectionArray.length : 0), 
+      0
+    );
   }, [day.sections]);
 
-  const percentage = totalTasks ? Math.min(Math.round((completedCount / totalTasks) * 100), 100) : 0;
-  const isDone = totalTasks > 0 && completedCount >= totalTasks;
+  const percentageSolved = explicitTotalTasks ? Math.round((completedCount / explicitTotalTasks) * 100) : 0;
+  const isFullyComplete = explicitTotalTasks > 0 && completedCount >= explicitTotalTasks;
 
   return (
-    <motion.div 
-      whileHover={{ y: -4 }}
-      className={`relative group p-5 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden
-        ${isDone ? "bg-emerald-500/[0.02] border-emerald-500/20" : "bg-white/[0.01] border-white/[0.06] hover:border-white/[0.15]"}
-      `}
-    >
-      <div className="flex justify-between items-center mb-4">
-        <div className={`text-[10px] font-black font-mono px-2 py-0.5 rounded ${isDone ? "bg-emerald-500/10 text-emerald-400" : "bg-white/5 text-slate-400"}`}>
-            DAY {day.day}
-        </div>
+    <div className={`
+      group border rounded-xl p-4 transition-all duration-300 bg-white/[0.005] hover:bg-white/[0.015]
+      ${isFullyComplete ? "border-emerald-500/20 shadow-lg shadow-emerald-500/[0.01]" : "border-white/[0.04] hover:border-white/[0.1]"}
+    `}>
+      <div className="flex justify-between items-center mb-2.5">
+        <span className="text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
+          Day {day.day || 'N/A'}
+        </span>
+        <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${isFullyComplete ? "bg-emerald-500/10 text-emerald-400" : "bg-white/5 text-slate-400"}`}>
+          {percentageSolved > 100 ? 100 : percentageSolved}%
+        </span>
       </div>
 
-      <h3 className="text-sm font-bold text-slate-200 group-hover:text-white transition-colors mb-4 line-clamp-1">
-        {day.title}
+      <h3 className="text-xs font-semibold text-slate-300 group-hover:text-white line-clamp-1 mb-4 transition-colors">
+        {day.title || 'Untitled Phase'}
       </h3>
 
-      <div className="space-y-2">
-        <div className="flex justify-between text-[10px] font-bold">
-            <span className="text-slate-500">{completedCount}/{totalTasks} TASKS</span>
-            <span className={isDone ? "text-emerald-400" : "text-indigo-400"}>{percentage}%</span>
-        </div>
-        <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-            <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${percentage}%` }}
-                className={`h-full ${isDone ? "bg-emerald-500" : "bg-indigo-500"}`}
-            />
-        </div>
+      <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden mb-3 border border-white/[0.01]">
+        <motion.div
+          className={`h-full rounded-full ${isFullyComplete ? "bg-emerald-400" : "bg-indigo-500"}`}
+          initial={{ width: 0 }}
+          animate={{ width: `${percentageSolved > 100 ? 100 : percentageSolved}%` }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        />
       </div>
-    </motion.div>
+
+      <div className="text-[10px] font-medium text-slate-500 flex justify-between items-center">
+        <span className="font-mono">{completedCount} <span className="text-slate-600">/</span> {explicitTotalTasks} tasks</span>
+        <span className={`font-semibold tracking-wide transition-colors ${isFullyComplete ? "text-emerald-400/90" : "text-slate-500 group-hover:text-slate-400"}`}>
+          {isFullyComplete ? "Verified" : "Active"}
+        </span>
+      </div>
+    </div>
   );
 }
 
-function MiniMetric({ label, value, highlight }) {
-    return (
-        <div className="text-center md:text-left">
-            <p className="text-[9px] uppercase tracking-[0.15em] font-bold text-slate-600 mb-1">{label}</p>
-            <p className={`text-sm font-bold ${highlight ? "text-indigo-400" : "text-slate-300"}`}>{value}</p>
-        </div>
-    );
+// -----------------------------
+// SECURE METRIC CARD
+// -----------------------------
+function StatCard({ icon, label, value, max, color, bg, border }) {
+  return (
+    <div className={`border ${border} ${bg} rounded-xl p-4 flex items-center gap-3.5 backdrop-blur-md transition-all duration-300 hover:bg-white/[0.015]`}>
+      <div className={`${color} p-2 bg-white/[0.02] border border-white/[0.04] rounded-lg shadow-sm`}>
+        {icon}
+      </div>
+      <div>
+        <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500">{label}</p>
+        <p className="text-lg font-bold text-white font-mono mt-0.5">
+          {isNaN(value) ? 0 : value}
+          {max !== undefined && <span className="text-slate-600 text-xs font-normal font-sans"> / {isNaN(max) ? 0 : max}</span>}
+        </p>
+      </div>
+    </div>
+  );
 }
